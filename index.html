@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TestFlight Monitor</title>
+    <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</head>
+<body class="glass-background">
+    <div class="container mt-4">
+        <!-- Header -->
+        <div class="row mb-4">
+            <div class="col">
+                <h1 class="display-6 mb-0">🛫 TestFlight Monitor</h1>
+                <p class="text-muted">Monitor TestFlight beta slots and get Telegram alerts</p>
+            </div>
+        </div>
+
+        <!-- Flash Messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="row mb-4">
+                    <div class="col">
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                                {{ message }}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <div class="row">
+            <!-- Configuration Panel -->
+            <div class="col-lg-6 mb-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">⚙️ Configuration</h5>
+                    </div>
+                    <div class="card-body">
+                        <form method="POST" action="{{ url_for('configure') }}">
+                            <div class="mb-3">
+                                <label for="bot_token" class="form-label">Telegram Bot Token</label>
+                                <input type="password" class="form-control" id="bot_token" name="bot_token" 
+                                       value="{{ config.get('bot_token', '') }}" 
+                                       placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz" required>
+                                <div class="form-text">Get this from @BotFather on Telegram</div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="chat_id" class="form-label">Chat ID</label>
+                                <input type="text" class="form-control" id="chat_id" name="chat_id" 
+                                       value="{{ config.get('chat_id', '') }}" 
+                                       placeholder="123456789" required>
+                                <div class="form-text">Your Telegram chat ID where alerts will be sent</div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="testflight_url" class="form-label">TestFlight URL</label>
+                                <input type="url" class="form-control" id="testflight_url" name="testflight_url" 
+                                       value="{{ config.get('testflight_url', '') }}" 
+                                       placeholder="https://testflight.apple.com/join/..." required>
+                                <div class="form-text">The TestFlight beta invitation URL to monitor</div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="check_interval" class="form-label">Check Interval (seconds)</label>
+                                <input type="number" class="form-control" id="check_interval" name="check_interval" 
+                                       value="{{ config.get('check_interval', 60) }}" 
+                                       min="30" max="3600" required>
+                                <div class="form-text">How often to check for slot availability (30-3600 seconds)</div>
+                            </div>
+                            
+                            <button type="submit" class="btn btn-primary">💾 Save Configuration</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Status Panel -->
+            <div class="col-lg-6 mb-4">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">📊 Monitor Status</h5>
+                        <div>
+                            {% if is_monitoring %}
+                                <span class="badge bg-success">🟢 Running</span>
+                            {% else %}
+                                <span class="badge bg-secondary">🔴 Stopped</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="row mb-3">
+                            <div class="col-6">
+                                <strong>Status:</strong>
+                            </div>
+                            <div class="col-6">
+                                {% if is_monitoring %}
+                                    <span class="text-success">Monitoring Active</span>
+                                {% else %}
+                                    <span class="text-muted">Not Running</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        
+                        {% if status.last_check %}
+                        <div class="row mb-3">
+                            <div class="col-6">
+                                <strong>Last Check:</strong>
+                            </div>
+                            <div class="col-6">
+                                <small class="text-muted">{{ status.last_check.strftime('%H:%M:%S') }}</small>
+                            </div>
+                        </div>
+                        {% endif %}
+                        
+                        {% if status.last_result is not none %}
+                        <div class="row mb-3">
+                            <div class="col-6">
+                                <strong>Last Result:</strong>
+                            </div>
+                            <div class="col-6">
+                                {% if status.last_result %}
+                                    <span class="text-success">✅ Slots Available</span>
+                                {% else %}
+                                    <span class="text-warning">❌ Beta Full</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
+                        
+                        {% if status.error_count > 0 %}
+                        <div class="row mb-3">
+                            <div class="col-6">
+                                <strong>Error Count:</strong>
+                            </div>
+                            <div class="col-6">
+                                <span class="text-danger">{{ status.error_count }}</span>
+                            </div>
+                        </div>
+                        {% endif %}
+                        
+                        <div class="d-grid gap-2">
+                            {% if is_monitoring %}
+                                <a href="{{ url_for('stop_monitoring') }}" class="btn btn-danger">🛑 Stop Monitoring</a>
+                            {% else %}
+                                <a href="{{ url_for('start_monitoring') }}" class="btn btn-success">▶️ Start Monitoring</a>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Logs Section -->
+        <div class="row">
+            <div class="col">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">📝 Monitor Logs</h5>
+                        <a href="{{ url_for('clear_logs') }}" class="btn btn-sm btn-outline-secondary" 
+                           onclick="return confirm('Are you sure you want to clear all logs?')">🗑️ Clear Logs</a>
+                    </div>
+                    <div class="card-body">
+                        {% if logs %}
+                            <div class="log-container" style="max-height: 400px; overflow-y: auto;">
+                                {% for log in logs %}
+                                    {% set bootstrap_class = 'alert-info' %}
+                                    {% set icon = 'ℹ️' %}
+                                    {% if log.level == 'success' %}
+                                        {% set bootstrap_class = 'alert-success' %}
+                                        {% set icon = '✅' %}
+                                    {% elif log.level == 'warning' %}
+                                        {% set bootstrap_class = 'alert-warning' %}
+                                        {% set icon = '⚠️' %}
+                                    {% elif log.level == 'error' %}
+                                        {% set bootstrap_class = 'alert-danger' %}
+                                        {% set icon = '❌' %}
+                                    {% endif %}
+                                    <div class="alert {{ bootstrap_class }} py-2 mb-2" role="alert">
+                                        <div class="d-flex justify-content-between align-items-start">
+                                            <div>
+                                                <span class="me-2">{{ icon }}</span>
+                                                <span>{{ log.message }}</span>
+                                            </div>
+                                            <small class="text-muted">{{ log.timestamp.strftime('%H:%M:%S') }}</small>
+                                        </div>
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <div class="text-center text-muted py-4">
+                                <p class="mb-0">📭 No logs yet</p>
+                                <small>Start monitoring to see activity logs here</small>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="row mt-4">
+            <div class="col">
+                <div class="text-center text-muted">
+                    <small>
+                        🔄 Auto-refresh page to see latest status and logs
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Auto-refresh script -->
+    <script>
+        // Auto-refresh page every 30 seconds when monitoring is active
+        {% if is_monitoring %}
+            setTimeout(function() {
+                window.location.reload();
+            }, 30000);
+        {% endif %}
+        
+        // Validate form before submission
+        document.querySelector('form').addEventListener('submit', function(e) {
+            const botToken = document.getElementById('bot_token').value;
+            const testflightUrl = document.getElementById('testflight_url').value;
+            
+            if (botToken && !botToken.match(/^\d+:[A-Za-z0-9_-]+$/)) {
+                e.preventDefault();
+                alert('Bot token format appears invalid. It should be in format: 123456789:ABCdefGHI...');
+                return;
+            }
+            
+            if (testflightUrl && !testflightUrl.includes('testflight.apple.com')) {
+                e.preventDefault();
+                alert('Please enter a valid TestFlight URL');
+                return;
+            }
+        });
+        
+        // Show/hide bot token
+        document.getElementById('bot_token').addEventListener('focus', function() {
+            this.type = 'text';
+        });
+        
+        document.getElementById('bot_token').addEventListener('blur', function() {
+            this.type = 'password';
+        });
+    </script>
+</body>
+</html>
